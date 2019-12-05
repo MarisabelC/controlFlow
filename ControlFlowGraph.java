@@ -1,5 +1,7 @@
 
+import java.io.BufferedWriter;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -52,10 +54,17 @@ public class ControlFlowGraph {
 	private Queue<String> tokenGroup;
 	private boolean isOr, isAnd;
 	private String token;
-	private Node _continue, _break;
+	private Node _continue;
 
 	public ControlFlowGraph(String fileName) throws IOException {
 		lexer = new Lexer(new FileReader(fileName));
+		setTokenGroup();
+		Pair<Node, List<Node>> nodes = getcurrentNode();
+		head = nodes.key;
+	}
+
+
+	private void setTokenGroup() throws IOException {
 		tokenGroup = new LinkedList<>();
 		Yytoken token;
 		while (!lexer.isZzAtEOF()) {
@@ -63,16 +72,11 @@ public class ControlFlowGraph {
 			if (token != null)
 				tokenGroup.add(token.m_text);
 		}
-		Pair<Node, List<Node>> nodes = getcurrentNode();
-		head = nodes.key;
 	}
-
-	/**
-	 * @throws IOException
-	 ****************************************************************/
+		
 	private Pair<Node, List<Node>> getcurrentNode() throws IOException {
 		Node start = null, previousNode = null, currentNode = null, _break=null;
-		Pair<Node, List<Node>> conditionGroup = null, nodes = null;
+		Pair<Node, List<Node>> conditionList = null, nodes = null;
 		String preCondition = "previous", condition = "condition";
 		StringBuilder declaration = new StringBuilder();
 		List<Node> sequence = null, end = new ArrayList<Node>();
@@ -87,18 +91,18 @@ public class ControlFlowGraph {
 				preCondition = condition;
 				condition = token;
 				if (!condition.equals("do") && !isElse(condition)) {
-					conditionGroup = conditionStatement(condition);
-					sequence = conditionGroup.value;
+					conditionList = conditionStatement(condition);
+					sequence = conditionList.value;
 					if (preCondition.equals("do")) 
 						connectConditionToPrevious(previousNode, end, sequence);
 					else if (previousNode == null) 
-						start = conditionGroup.key;
+						start = conditionList.key;
 					else {
-						connectNode(previousNode, conditionGroup.key);
-						connectEndToPreviousNode(end, conditionGroup.key);
+						connectNode(previousNode, conditionList.key);
+						connectEndToPreviousNode(end, conditionList.key);
 					}
-					if (conditionGroup != null && isAnd == true) {
-						end.addAll(conditionGroup.value);
+					if (conditionList != null && isAnd == true) {
+						end.addAll(conditionList.value);
 						isAnd = false;
 					}
 					previousNode = sequence.get(sequence.size() - 1);
@@ -127,18 +131,19 @@ public class ControlFlowGraph {
 					currentNode = null;
 				}
 				nodes = getcurrentNode();
-				if (isOr == true && conditionGroup != null) {
+				if (isOr == true && conditionList != null) {
 					connectNodeGroup(sequence, nodes.key);
-					conditionGroup = null;
+					conditionList = null;
 					isOr = false;
 				} else
 					connectNode(previousNode, nodes.key);
 				if (nodes != null && nodes._continue == true)
 					this._continue = nodes.value.get(0);
-				else if (!isLoop(condition))
+				else if (!isLoop(condition)) {
 					end.addAll(nodes.value);
+				}
 				else if (condition.equals("for"))
-					previousNode = conditionGroup.connection;
+					previousNode = conditionList.connection;
 				if (isElse(condition)) {
 					end.remove(previousNode);
 					previousNode = nodes.value.get(0);
@@ -148,7 +153,7 @@ public class ControlFlowGraph {
 					if (nodes.value.get(last).getStatements().equals("break ")) {
 						_break= nodes.value.remove(last);
 					}
-					connectToLoopCondition(nodes.value, conditionGroup.connection);
+					connectToLoopCondition(nodes.value, conditionList.connection);
 					if (_break != null)
 						end.add(_break);
 				}
@@ -238,7 +243,7 @@ public class ControlFlowGraph {
 	private Node getStatement(StringBuilder declaration, Node currentNode, Node previousNode, String preCondition,
 			String condition, List<Node> end) {
 		if (declaration.length() != 0) {
-			if (currentNode == null)
+			if (currentNode == null || declaration.equals("case "))
 				currentNode = new Node(++id, declaration);
 			else
 				currentNode.addStatement(declaration);
@@ -385,7 +390,9 @@ public class ControlFlowGraph {
 	}
 
 	/******************************************************************/
-	public void printNodes() {
+	public void printNodes() throws IOException {
+	    BufferedWriter writer = new BufferedWriter(new FileWriter("graph.dot", false));
+	    writer.write("digraph {\n");
 		Set<Pair<Integer, Integer>> set = new HashSet<>();
 		Set<String> vertices = new TreeSet<>();
 		List<String> edges = new ArrayList<>();
@@ -394,9 +401,13 @@ public class ControlFlowGraph {
 		for (String vertex : vertices)
 			System.out.println(vertex);
 		System.out.println("\n=================================");
-		System.out.println("\nEdges: \n");
-		for (String edge : edges)
-			System.out.println(edge);
+//		System.out.println("\nEdges: \n");
+		for (String edge : edges) {
+//			System.out.println(edge);
+			writer.append(edge+"\n");
+		}
+		writer.append("}");
+		writer.close();
 	}
 
 	/******************************************************************/
@@ -409,8 +420,8 @@ public class ControlFlowGraph {
 				StringBuilder str = new StringBuilder();
 				if (!set.contains(pair)) {
 					str.append(head.getId());
-					str.append("  =>  ");
-					str.append(child.getId());
+					str.append("  ->  ");
+					str.append(child.getId()+";");
 					edges.add(str.toString());
 					set.add(pair);
 					printNodes(child, set, vertices, edges);
@@ -418,5 +429,6 @@ public class ControlFlowGraph {
 			}
 		}
 	}
+	
 
 }
